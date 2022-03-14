@@ -68,4 +68,6 @@ pub enum Cw20ExecuteMsg {
     },
     /// If set as the "marketing" role on the contract, upload a new URL, SVG, or PNG for the token
     UploadLogo(Logo),
+    /// Only owner can update minter.
+    UpdateMinter { minter: String },
 }
