@@ -120,6 +120,7 @@ pub fn instantiate(
         decimals: msg.decimals,
         total_supply,
         mint,
+        owner: _info.sender,
     };
     TOKEN_INFO.save(deps.storage, &data)?;
 
@@ -207,6 +208,7 @@ pub fn execute(
             marketing,
         } => execute_update_marketing(deps, env, info, project, description, marketing),
         ExecuteMsg::UploadLogo(logo) => execute_upload_logo(deps, env, info, logo),
+        ExecuteMsg::UpdateMinter { minter } => execute_update_minter(deps, env, info, minter),
     }
 }
 
@@ -354,7 +356,7 @@ pub fn execute_send(
                 amount,
                 msg,
             }
-            .into_cosmos_msg(contract)?,
+                .into_cosmos_msg(contract)?,
         );
     Ok(res)
 }
@@ -447,6 +449,27 @@ pub fn execute_upload_logo(
     Ok(res)
 }
 
+pub fn execute_update_minter(deps: DepsMut, _env: Env, info: MessageInfo, minter: String) -> Result<Response, ContractError> {
+    let mut config = TOKEN_INFO.load(deps.storage)?;
+
+    if info.sender != config.owner.clone() {
+        return Err(ContractError::Unauthorized {});
+    }
+
+    if config.mint.is_none() {
+        return Err(ContractError::MinterNotSet {});
+    }
+
+    let mint = Some(MinterData {
+        minter: deps.api.addr_validate(&minter)?,
+        cap: config.mint.as_ref().unwrap().cap,
+    });
+
+    config.mint = mint;
+    TOKEN_INFO.save(deps.storage, &config)?;
+    Ok(Response::new().add_attribute("minter", minter))
+}
+
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
     match msg {
@@ -526,6 +549,8 @@ mod tests {
 
     use super::*;
     use crate::msg::InstantiateMarketingInfo;
+    use std::collections::HashMap;
+
 
     fn get_balance<T: Into<String>>(deps: Deps, address: T) -> Uint128 {
         query_balance(deps, address.into()).unwrap().balance
@@ -589,7 +614,7 @@ mod tests {
             }
         );
         assert_eq!(get_balance(deps.as_ref(), addr), amount);
-        assert_eq!(query_minter(deps.as_ref()).unwrap(), mint,);
+        assert_eq!(query_minter(deps.as_ref()).unwrap(), mint, );
         meta
     }
 
@@ -867,6 +892,60 @@ mod tests {
     }
 
     #[test]
+    fn update_minter_if_minter_unset() {
+        let mut deps = mock_dependencies(&[]);
+        do_instantiate(deps.as_mut(), &String::from("genesis"), Uint128::new(1234));
+
+        let msg = ExecuteMsg::UpdateMinter {
+            minter: String::from("minter"),
+        };
+        let info = mock_info("creator", &[]);
+        let env = mock_env();
+        let err = execute(deps.as_mut(), env, info, msg).unwrap_err();
+        assert_eq!(err, ContractError::MinterNotSet {});
+    }
+
+    #[test]
+    fn update_minter_if_minter_set() {
+        let mut deps = mock_dependencies(&[]);
+        do_instantiate_with_minter(
+            deps.as_mut(),
+            &String::from("genesis"),
+            Uint128::new(1234),
+            &String::from("minter"),
+            Some(Uint128::new(100000)),
+        );
+
+
+        // sender is not owner
+        let msg = ExecuteMsg::UpdateMinter {
+            minter: String::from("minter_new"),
+        };
+        let info = mock_info("non_creator", &[]);
+        let env = mock_env();
+        let err = execute(deps.as_mut(), env, info, msg).unwrap_err();
+        assert_eq!(err, ContractError::Unauthorized {});
+
+        // sender is owner
+        let msg = ExecuteMsg::UpdateMinter {
+            minter: String::from("minter_new"),
+        };
+        let info = mock_info("creator", &[]);
+        let env = mock_env();
+        let res = execute(deps.as_mut(), env.clone(), info, msg).unwrap();
+        let attr_map: HashMap<String, String> = res.attributes.into_iter().map(|item| (item.key, item.value)).collect();
+        assert_eq!(attr_map["minter"], "minter_new");
+        // query minter
+        let msg = QueryMsg::Minter {};
+        let data = query(deps.as_ref(), env, msg).unwrap();
+        let res: MinterResponse = from_binary(&data).unwrap();
+        assert_eq!(res, MinterResponse {
+            minter: "minter_new".to_string(),
+            cap: Some(Uint128::new(100000)),
+        });
+    }
+
+    #[test]
     fn instantiate_multiple_accounts() {
         let mut deps = mock_dependencies(&[]);
         let amount1 = Uint128::from(11223344u128);
@@ -928,7 +1007,7 @@ mod tests {
             env.clone(),
             QueryMsg::Balance { address: addr1 },
         )
-        .unwrap();
+            .unwrap();
         let loaded: BalanceResponse = from_binary(&data).unwrap();
         assert_eq!(loaded.balance, amount1);
 
@@ -940,7 +1019,7 @@ mod tests {
                 address: String::from("addr0002"),
             },
         )
-        .unwrap();
+            .unwrap();
         let loaded: BalanceResponse = from_binary(&data).unwrap();
         assert_eq!(loaded.balance, Uint128::zero());
     }
@@ -1106,8 +1185,8 @@ mod tests {
             amount: transfer,
             msg: send_msg,
         }
-        .into_binary()
-        .unwrap();
+            .into_binary()
+            .unwrap();
         // and this is how it must be wrapped for the vm to process it
         assert_eq!(
             res.messages[0],
@@ -1162,7 +1241,7 @@ mod tests {
                     marketing: Some("creator".to_owned()),
                 },
             )
-            .unwrap_err();
+                .unwrap_err();
 
             assert_eq!(err, ContractError::Unauthorized {});
 
@@ -1216,7 +1295,7 @@ mod tests {
                     marketing: None,
                 },
             )
-            .unwrap();
+                .unwrap();
 
             assert_eq!(res.messages, vec![]);
 
@@ -1269,7 +1348,7 @@ mod tests {
                     marketing: None,
                 },
             )
-            .unwrap();
+                .unwrap();
 
             assert_eq!(res.messages, vec![]);
 
@@ -1322,7 +1401,7 @@ mod tests {
                     marketing: None,
                 },
             )
-            .unwrap();
+                .unwrap();
 
             assert_eq!(res.messages, vec![]);
 
@@ -1375,7 +1454,7 @@ mod tests {
                     marketing: None,
                 },
             )
-            .unwrap();
+                .unwrap();
 
             assert_eq!(res.messages, vec![]);
 
@@ -1428,7 +1507,7 @@ mod tests {
                     marketing: Some("marketing".to_owned()),
                 },
             )
-            .unwrap();
+                .unwrap();
 
             assert_eq!(res.messages, vec![]);
 
@@ -1481,7 +1560,7 @@ mod tests {
                     marketing: Some("m".to_owned()),
                 },
             )
-            .unwrap_err();
+                .unwrap_err();
 
             assert!(
                 matches!(err, ContractError::Std(_)),
@@ -1538,7 +1617,7 @@ mod tests {
                     marketing: Some("".to_owned()),
                 },
             )
-            .unwrap();
+                .unwrap();
 
             assert_eq!(res.messages, vec![]);
 
@@ -1587,7 +1666,7 @@ mod tests {
                 info,
                 ExecuteMsg::UploadLogo(Logo::Url("new_url".to_owned())),
             )
-            .unwrap();
+                .unwrap();
 
             assert_eq!(res.messages, vec![]);
 
@@ -1636,7 +1715,7 @@ mod tests {
                 info,
                 ExecuteMsg::UploadLogo(Logo::Embedded(EmbeddedLogo::Png(PNG_HEADER.into()))),
             )
-            .unwrap();
+                .unwrap();
 
             assert_eq!(res.messages, vec![]);
 
@@ -1687,7 +1766,7 @@ mod tests {
                 info,
                 ExecuteMsg::UploadLogo(Logo::Embedded(EmbeddedLogo::Svg(img.into()))),
             )
-            .unwrap();
+                .unwrap();
 
             assert_eq!(res.messages, vec![]);
 
@@ -1738,7 +1817,7 @@ mod tests {
                 info,
                 ExecuteMsg::UploadLogo(Logo::Embedded(EmbeddedLogo::Png(img.into()))),
             )
-            .unwrap_err();
+                .unwrap_err();
 
             assert_eq!(err, ContractError::LogoTooBig {});
 
@@ -1786,8 +1865,8 @@ mod tests {
                 std::str::from_utf8(&[b'x'; 6000]).unwrap(),
                 "</svg>",
             ]
-            .concat()
-            .into_bytes();
+                .concat()
+                .into_bytes();
 
             let err = execute(
                 deps.as_mut(),
@@ -1795,7 +1874,7 @@ mod tests {
                 info,
                 ExecuteMsg::UploadLogo(Logo::Embedded(EmbeddedLogo::Svg(img.into()))),
             )
-            .unwrap_err();
+                .unwrap_err();
 
             assert_eq!(err, ContractError::LogoTooBig {});
 
@@ -1845,7 +1924,7 @@ mod tests {
                 info,
                 ExecuteMsg::UploadLogo(Logo::Embedded(EmbeddedLogo::Png(img.into()))),
             )
-            .unwrap_err();
+                .unwrap_err();
 
             assert_eq!(err, ContractError::InvalidPngHeader {});
 
@@ -1896,7 +1975,7 @@ mod tests {
                 info,
                 ExecuteMsg::UploadLogo(Logo::Embedded(EmbeddedLogo::Svg(img.into()))),
             )
-            .unwrap_err();
+                .unwrap_err();
 
             assert_eq!(err, ContractError::InvalidXmlPreamble {});
 

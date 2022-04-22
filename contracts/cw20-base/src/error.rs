@@ -32,4 +32,7 @@ pub enum ContractError {
 
     #[error("Invalid png header")]
     InvalidPngHeader {},
+
+    #[error("Minter not set")]
+    MinterNotSet {},
 }

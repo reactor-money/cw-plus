@@ -14,6 +14,7 @@ pub struct TokenInfo {
     pub decimals: u8,
     pub total_supply: Uint128,
     pub mint: Option<MinterData>,
+    pub owner: Addr,
 }
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]

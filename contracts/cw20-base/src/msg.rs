@@ -111,3 +111,8 @@ pub enum QueryMsg {
     /// Return type: DownloadLogoResponse.
     DownloadLogo {},
 }
+
+
+/// ## Description
+#[derive(Serialize, Deserialize, JsonSchema)]
+pub struct MigrateMsg {}
